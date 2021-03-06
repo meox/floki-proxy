@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"flag"
+	"fmt"
 	mathrand "math/rand"
 	"net/http"
 	"strings"
@@ -17,6 +18,7 @@ import (
 )
 
 var (
+	port           int
 	failureRate    int
 	failWithPrefix string
 )
@@ -84,9 +86,14 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 func main() {
 	seedRandom()
 
+	flag.IntVar(&port, "port", 9005, "proxy port")
 	flag.IntVar(&failureRate, "failure-rate", 0, "percentage of failure")
 	flag.StringVar(&failWithPrefix, "fail-with-prefix", "", "fail all request with the given prefix")
 	flag.Parse()
+
+	if failureRate < 0 || failureRate > 100 {
+		log.Fatal("bad failure rate: expected a value in the range [0, 100]")
+	}
 
 	log.Infof("============== STARTING FLOKI PROXY ==================")
 	log.Infof("== F-Rate:   %02d", failureRate)
@@ -94,7 +101,7 @@ func main() {
 	log.Infof("======================================================")
 
 	http.HandleFunc("/", mainHandler)
-	log.Fatal(http.ListenAndServe(":9005", nil))
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), nil))
 }
 
 //shouldFail is an utility function the takes as input the failure-rate
