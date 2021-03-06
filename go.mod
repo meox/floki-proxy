@@ -1,4 +1,4 @@
-module github.com/meox/floky-proxy
+module github.com/meox/floki-proxy
 
 go 1.16
 
