@@ -61,6 +61,7 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		log.Errorf("performing the request: %v", err)
+		return
 	}
 	defer resp.Body.Close()
 
@@ -96,6 +97,7 @@ func main() {
 	}
 
 	log.Infof("============== STARTING FLOKI PROXY ==================")
+	log.Infof("== Listening on: *:%d", port)
 	log.Infof("== F-Rate:   %02d", failureRate)
 	log.Infof("== F-Prefix: %s", failWithPrefix)
 	log.Infof("======================================================")
