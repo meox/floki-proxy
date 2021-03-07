@@ -21,9 +21,10 @@ import (
 )
 
 var (
-	port           int
-	failureRate    int
-	failWithPrefix string
+	port                 int
+	failureRate          int
+	failWithPrefix       string
+	failStatusCodePrefix int
 )
 
 func mainHandler(w http.ResponseWriter, r *http.Request) {
@@ -34,7 +35,7 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if shouldFailByPrefix(r.URL.Path) {
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(failStatusCodePrefix)
 		log.Warnf("failing request due to prefix match: %s", r.RequestURI)
 		return
 	}
@@ -104,6 +105,7 @@ func main() {
 	flag.IntVar(&port, "port", 9005, "proxy port")
 	flag.IntVar(&failureRate, "failure-rate", 0, "percentage of failure")
 	flag.StringVar(&failWithPrefix, "fail-with-prefix", "", "fail all request with the given prefix")
+	flag.IntVar(&failStatusCodePrefix, "fail-code-prefix", http.StatusBadRequest, "HTTP Status Code use in case of a failure due to prefix match")
 	flag.Parse()
 
 	if failureRate < 0 || failureRate > 100 {
