@@ -10,11 +10,8 @@ import (
 	"encoding/binary"
 	"flag"
 	"fmt"
-	"io"
-	"io/ioutil"
 	mathrand "math/rand"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/meox/floki-proxy/types"
@@ -43,20 +40,7 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	cl, f, err := storeBody(r.Body)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		log.Warnf("failing request due to prefix match: %s", r.RequestURI)
-		return
-	}
-	defer func() {
-		err = os.Remove(f.Name())
-		if err != nil {
-			log.Errorf("cannot remove file %s: %v", f.Name(), err)
-		}
-	}()
-
-	req, err := http.NewRequestWithContext(ctx, r.Method, r.RequestURI, f)
+	req, err := http.NewRequestWithContext(ctx, r.Method, r.RequestURI, r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		log.Errorf("creating request: %v", err)
@@ -65,7 +49,7 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 
 	// attach the original headers
 	req.Header = r.Header.Clone()
-	req.ContentLength = cl
+	req.ContentLength = r.ContentLength
 	req.Header.Set("Via", "floki proxy")
 	req.Header.Set("X-Forwarded-For", r.RemoteAddr)
 	req.Header.Set("X-Forwarded-Host", r.Host)
@@ -79,6 +63,12 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
+	// send back the response header
+	for k, vs := range resp.Header {
+		for _, v := range vs {
+			w.Header().Add(k, v)
+		}
+	}
 	w.WriteHeader(resp.StatusCode)
 
 	buf := make([]byte, 4096)
@@ -93,11 +83,16 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	log.WithField("code", resp.Status).
+	logger := log.WithField("code", resp.Status).
 		WithField("method", r.Method).
 		WithField("req-bytes", req.ContentLength).
-		WithField("resp-bytes", resp.ContentLength).
-		Infof("request to %s completed", r.RequestURI)
+		WithField("resp-bytes", resp.ContentLength)
+
+	if resp.StatusCode == http.StatusOK {
+		logger.Infof("request to %s completed", r.RequestURI)
+	} else {
+		logger.Warnf("request to %s completed", r.RequestURI)
+	}
 }
 
 func main() {
@@ -158,42 +153,4 @@ func seedRandom() {
 
 	data := binary.BigEndian.Uint64(r[:])
 	mathrand.Seed(int64(data))
-}
-
-// storeBody: create a temporary file that contains the full request performed by the client
-// this is useful in order to set the ContentLength for the forwarding request
-func storeBody(body io.Reader) (int64, *os.File, error) {
-	f, err := ioutil.TempFile("", "floki-*")
-	if err != nil {
-		return 0, nil, fmt.Errorf("error opening file: %v", err)
-	}
-
-	closeFn := func() {
-		_ = f.Close()
-		err := os.Remove(f.Name())
-		if err != nil {
-			log.Errorf("cannot remove %s: %v", f.Name(), err)
-		}
-	}
-
-	buf := make([]byte, 1*1024*1024)
-	cl, err := io.CopyBuffer(f, body, buf)
-	if err != nil {
-		closeFn()
-		return 0, nil, fmt.Errorf("writing file: %w", err)
-	}
-
-	err = f.Sync()
-	if err != nil {
-		closeFn()
-		return 0, nil, fmt.Errorf("syncing file: %w", err)
-	}
-
-	_, err = f.Seek(0, io.SeekStart)
-	if err != nil {
-		closeFn()
-		return 0, nil, fmt.Errorf("closing file: %w", err)
-	}
-
-	return cl, f, nil
 }
