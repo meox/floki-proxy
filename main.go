@@ -17,14 +17,14 @@ import (
 	"os"
 	"strings"
 
+	"github.com/meox/floki-proxy/types"
 	log "github.com/sirupsen/logrus"
 )
 
 var (
-	port                 int
-	failureRate          int
-	failWithPrefix       string
-	failStatusCodePrefix int
+	port           int
+	failureRate    int
+	failWithPrefix types.FailingPrefixCode
 )
 
 func mainHandler(w http.ResponseWriter, r *http.Request) {
@@ -34,8 +34,9 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if shouldFailByPrefix(r.URL.Path) {
-		w.WriteHeader(failStatusCodePrefix)
+	statusCode, failed := shouldFailByPrefix(r.URL.Path)
+	if failed {
+		w.WriteHeader(statusCode)
 		log.Warnf("failing request due to prefix match: %s", r.RequestURI)
 		return
 	}
@@ -104,8 +105,7 @@ func main() {
 
 	flag.IntVar(&port, "port", 9005, "proxy port")
 	flag.IntVar(&failureRate, "failure-rate", 0, "percentage of failure")
-	flag.StringVar(&failWithPrefix, "fail-with-prefix", "", "fail all request with the given prefix")
-	flag.IntVar(&failStatusCodePrefix, "fail-code-prefix", http.StatusBadRequest, "HTTP Status Code use in case of a failure due to prefix match")
+	flag.Var(&failWithPrefix, "fail-with-prefix", "fail all request with the given prefix")
 	flag.Parse()
 
 	if failureRate < 0 || failureRate > 100 {
@@ -138,12 +138,14 @@ func shouldFail() bool {
 
 //shouldFailByPrefix if failure by prefix is set return true if the request path
 //match the desired prefix, otherwise return false
-func shouldFailByPrefix(path string) bool {
-	if failWithPrefix == "" {
-		return false
+func shouldFailByPrefix(path string) (int, bool) {
+	for k, v := range failWithPrefix {
+		if strings.HasPrefix(path, k) {
+			return v, true
+		}
 	}
 
-	return strings.HasPrefix(path, failWithPrefix)
+	return 0, false
 }
 
 // seed the random engine using the "/dev/random" as a source
