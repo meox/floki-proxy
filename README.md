@@ -1,7 +1,7 @@
 # floki-proxy
 A crazy HTTP proxy that can help you to test the reliabilty of your software
 
-<img src="https://github.com/meox/floki-proxy/troll.svg" width="90" alt="a Troll"/>
+![troll](troll.svg){:height="90px" width="90px"}
 
 ## Example
 
