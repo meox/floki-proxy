@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/binary"
 	"flag"
@@ -13,6 +14,7 @@ import (
 	mathrand "math/rand"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/meox/floki-proxy/types"
 	log "github.com/sirupsen/logrus"
@@ -22,6 +24,7 @@ var (
 	port           int
 	failureRate    int
 	failWithPrefix types.FailingPrefixCode
+	methodCounters types.MethodCounters
 )
 
 func mainHandler(w http.ResponseWriter, r *http.Request) {
@@ -39,6 +42,11 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+
+	// update counters
+	a := methodCounters[r.Method]
+	a.Add(1)
+	methodCounters[r.Method] = a
 
 	req, err := http.NewRequestWithContext(ctx, r.Method, r.RequestURI, r.Body)
 	if err != nil {
@@ -113,8 +121,29 @@ func main() {
 	log.Infof("== F-Prefix: %s", failWithPrefix)
 	log.Infof("======================================================")
 
+	go printCounters(context.Background())
+
 	http.HandleFunc("/", mainHandler)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), nil))
+}
+
+func printCounters(ctx context.Context) {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+
+		fmt.Printf("Method Counters\n")
+		for k, v := range methodCounters {
+			fmt.Printf("%s: %d\n", k, v.Load())
+		}
+		fmt.Printf("\n")
+	}
 }
 
 //shouldFail is an utility function the takes as input the failure-rate
