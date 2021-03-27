@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/atomic"
+
 	"github.com/meox/floki-proxy/types"
 	log "github.com/sirupsen/logrus"
 )
@@ -44,8 +46,12 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// update counters
-	a := methodCounters[r.Method]
-	a.Add(1)
+	a, found := methodCounters[r.Method]
+	if !found {
+		a = atomic.NewUint64(1)
+	} else {
+		a.Add(1)
+	}
 	methodCounters[r.Method] = a
 
 	req, err := http.NewRequestWithContext(ctx, r.Method, r.RequestURI, r.Body)
@@ -121,6 +127,7 @@ func main() {
 	log.Infof("== F-Prefix: %s", failWithPrefix)
 	log.Infof("======================================================")
 
+	methodCounters = make(types.MethodCounters)
 	go printCounters(context.Background())
 
 	http.HandleFunc("/", mainHandler)
@@ -138,11 +145,13 @@ func printCounters(ctx context.Context) {
 		case <-ticker.C:
 		}
 
-		fmt.Printf("Method Counters\n")
-		for k, v := range methodCounters {
-			fmt.Printf("%s: %d\n", k, v.Load())
+		if len(methodCounters) > 0 {
+			fmt.Printf("Method Counters\n")
+			for k, v := range methodCounters {
+				fmt.Printf("%s: %d\n", k, v.Load())
+			}
+			fmt.Printf("\n")
 		}
-		fmt.Printf("\n")
 	}
 }
 

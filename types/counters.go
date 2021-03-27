@@ -4,4 +4,4 @@ package types
 
 import "go.uber.org/atomic"
 
-type MethodCounters map[string]atomic.Int64
+type MethodCounters map[string]*atomic.Uint64
