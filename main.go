@@ -21,14 +21,15 @@ import (
 )
 
 var (
-	port           int
-	failureRate    int
-	failWithPrefix types.FailingPrefixCode
-	methodCounters *types.MethodCounters
+	port                int
+	failureRate         int
+	failureTransferRate int
+	failWithPrefix      types.FailingPrefixCode
+	methodCounters      *types.MethodCounters
 )
 
 func mainHandler(w http.ResponseWriter, r *http.Request) {
-	if shouldFail() {
+	if shouldFail(failureRate) {
 		w.WriteHeader(http.StatusInternalServerError)
 		log.Warnf("failing request to: %s", r.RequestURI)
 		return
@@ -77,14 +78,22 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 
+	var errorTransfer bool
 	buf := make([]byte, 4096)
 	for {
 		n, err := resp.Body.Read(buf)
 		_, errW := w.Write(buf[0:n])
 		if errW != nil {
+			errorTransfer = true
 			break
 		}
 		if err != nil {
+			errorTransfer = true
+			break
+		}
+		if shouldFail(failureTransferRate) {
+			// simulate error
+			errorTransfer = true
 			break
 		}
 	}
@@ -92,9 +101,10 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 	logger := log.WithField("code", resp.Status).
 		WithField("method", r.Method).
 		WithField("req-bytes", req.ContentLength).
-		WithField("resp-bytes", resp.ContentLength)
+		WithField("resp-bytes", resp.ContentLength).
+		WithField("error-transfer", errorTransfer)
 
-	if resp.StatusCode == http.StatusOK {
+	if resp.StatusCode == http.StatusOK && !errorTransfer {
 		logger.Infof("request to %s completed", r.RequestURI)
 	} else {
 		logger.Warnf("request to %s completed", r.RequestURI)
@@ -106,6 +116,7 @@ func main() {
 
 	flag.IntVar(&port, "port", 9005, "proxy port")
 	flag.IntVar(&failureRate, "failure-rate", 0, "percentage of failure")
+	flag.IntVar(&failureTransferRate, "failure-transfer-rate", 0, "percentage of failure")
 	flag.Var(&failWithPrefix, "fail-with-prefix", "fail all request with the given prefix")
 	flag.Parse()
 
@@ -115,8 +126,9 @@ func main() {
 
 	log.Infof("============== STARTING FLOKI PROXY ==================")
 	log.Infof("== Listening on: *:%d", port)
-	log.Infof("== F-Rate:   %d%%", failureRate)
-	log.Infof("== F-Prefix: %s", failWithPrefix)
+	log.Infof("== F-Rate:    %d%%", failureRate)
+	log.Infof("== F-Tr-Rate: %d%%", failureTransferRate)
+	log.Infof("== F-Prefix:  %s", failWithPrefix)
 	log.Infof("======================================================")
 
 	methodCounters = types.NewMethodCounters()
@@ -144,11 +156,11 @@ func printCounters(ctx context.Context) {
 //shouldFail is an utility function the takes as input the failure-rate
 //and using a normal distribution decide if the request should
 //fails, returning immediately 500, or should be forwarded
-func shouldFail() bool {
-	if failureRate == 0 {
+func shouldFail(fRate int) bool {
+	if fRate == 0 {
 		return false
 	}
-	if failureRate == 100 {
+	if fRate == 100 {
 		return true
 	}
 
