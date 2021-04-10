@@ -24,6 +24,7 @@ var (
 	port                int
 	failureRate         int
 	failureTransferRate int
+	maxFailure          int
 	failWithPrefix      types.FailingPrefixCode
 	methodCounters      *types.MethodCounters
 )
@@ -79,21 +80,23 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(resp.StatusCode)
 
 	var errorTransfer bool
+	var totalWritten int64
 	buf := make([]byte, 4096)
 	for {
 		n, err := resp.Body.Read(buf)
-		_, errW := w.Write(buf[0:n])
-		if errW != nil {
+		if (maxFailure != -1 && maxFailure > 0) && shouldFail(failureTransferRate) {
+			// simulate error
 			errorTransfer = true
+			maxFailure--
+			break
+		}
+
+		w, errW := w.Write(buf[0:n])
+		totalWritten += int64(w)
+		if errW != nil {
 			break
 		}
 		if err != nil {
-			errorTransfer = true
-			break
-		}
-		if shouldFail(failureTransferRate) {
-			// simulate error
-			errorTransfer = true
 			break
 		}
 	}
@@ -101,10 +104,12 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 	logger := log.WithField("code", resp.Status).
 		WithField("method", r.Method).
 		WithField("req-bytes", req.ContentLength).
+		WithField("req-range", req.Header.Get("Range")).
 		WithField("resp-bytes", resp.ContentLength).
-		WithField("error-transfer", errorTransfer)
+		WithField("error-transfer", errorTransfer).
+		WithField("total-written", totalWritten)
 
-	if resp.StatusCode == http.StatusOK && !errorTransfer {
+	if (resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNoContent) && !errorTransfer {
 		logger.Infof("request to %s completed", r.RequestURI)
 	} else {
 		logger.Warnf("request to %s completed", r.RequestURI)
@@ -115,8 +120,9 @@ func main() {
 	seedRandom()
 
 	flag.IntVar(&port, "port", 9005, "proxy port")
+	flag.IntVar(&maxFailure, "max-failure", -1, "max failure")
 	flag.IntVar(&failureRate, "failure-rate", 0, "percentage of failure")
-	flag.IntVar(&failureTransferRate, "failure-transfer-rate", 0, "percentage of failure")
+	flag.IntVar(&failureTransferRate, "failure-transfer-rate", 0, "percentage of transfer failure")
 	flag.Var(&failWithPrefix, "fail-with-prefix", "fail all request with the given prefix")
 	flag.Parse()
 
@@ -132,7 +138,7 @@ func main() {
 	log.Infof("======================================================")
 
 	methodCounters = types.NewMethodCounters()
-	go printCounters(context.Background())
+	//go printCounters(context.Background())
 
 	http.HandleFunc("/", mainHandler)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), nil))
@@ -164,7 +170,7 @@ func shouldFail(fRate int) bool {
 		return true
 	}
 
-	return mathrand.Intn(100) < failureRate
+	return mathrand.Intn(100) < fRate
 }
 
 //shouldFailByPrefix if failure by prefix is set return true if the request path
