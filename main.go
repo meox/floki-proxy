@@ -25,13 +25,14 @@ var (
 	failureRate         int
 	failureTransferRate int
 	maxFailure          int
+	failureCode         int
 	failWithPrefix      types.FailingPrefixCode
 	methodCounters      *types.MethodCounters
 )
 
 func mainHandler(w http.ResponseWriter, r *http.Request) {
 	if shouldFail(failureRate) {
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(failureCode)
 		log.Warnf("failing request to: %s", r.RequestURI)
 		return
 	}
@@ -122,6 +123,7 @@ func main() {
 	flag.IntVar(&port, "port", 9005, "proxy port")
 	flag.IntVar(&maxFailure, "max-failure", -1, "max failure")
 	flag.IntVar(&failureRate, "failure-rate", 0, "percentage of failure")
+	flag.IntVar(&failureCode, "failure-code", http.StatusInternalServerError, "http failure code status")
 	flag.IntVar(&failureTransferRate, "failure-transfer-rate", 0, "percentage of transfer failure")
 	flag.Var(&failWithPrefix, "fail-with-prefix", "fail all request with the given prefix")
 	flag.Parse()
